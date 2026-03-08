@@ -1,10 +1,22 @@
 "use client";
 
-import { useState } from "react";
-import { mockContextPacks } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+import { getContextPacks } from "@/lib/api";
 import { CreateModal } from "@/components/create-modal";
 
-type Pack = (typeof mockContextPacks)[0];
+interface ContextPack {
+  id: number | string;
+  name: string;
+  description: string;
+  emoji?: string;
+  resources: {
+    prompts: number;
+    skills: number;
+    mcps: number;
+  };
+  generatedMcpConfig?: string;
+  mcpConfig?: any;
+}
 
 function ResourceChip({
   label,
@@ -29,9 +41,9 @@ function ResourceChip({
   );
 }
 
-function PackModal({ pack, onClose }: { pack: Pack; onClose: () => void }) {
+function PackModal({ pack, onClose }: { pack: ContextPack; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
-  const json = JSON.stringify(pack.mcpConfig, null, 2);
+  const json = pack.generatedMcpConfig || JSON.stringify(pack.mcpConfig || {}, null, 2);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(json);
@@ -61,7 +73,7 @@ function PackModal({ pack, onClose }: { pack: Pack; onClose: () => void }) {
         >
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-2xl">{pack.emoji}</span>
+              <span className="text-2xl">{pack.emoji || "📦"}</span>
               <h2 className="text-xl font-black text-white">{pack.name}</h2>
             </div>
             <p className="text-sm leading-relaxed" style={{ color: "#6b6b8a" }}>
@@ -121,7 +133,7 @@ function PackModal({ pack, onClose }: { pack: Pack; onClose: () => void }) {
   );
 }
 
-function PackCard({ pack, onClick }: { pack: Pack; onClick: () => void }) {
+function PackCard({ pack, onClick }: { pack: ContextPack; onClick: () => void }) {
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -138,7 +150,7 @@ function PackCard({ pack, onClick }: { pack: Pack; onClick: () => void }) {
       onMouseLeave={() => setHovered(false)}
     >
       {/* Emoji */}
-      <span className="text-3xl">{pack.emoji}</span>
+      <span className="text-3xl">{pack.emoji || "📦"}</span>
 
       {/* Name & Description */}
       <div>
@@ -150,18 +162,35 @@ function PackCard({ pack, onClick }: { pack: Pack; onClick: () => void }) {
 
       {/* Resource chips */}
       <div className="flex flex-wrap gap-2 mt-auto">
-        <ResourceChip label="prompts" count={pack.resources.prompts} color="#6366f1" />
-        <ResourceChip label="skills" count={pack.resources.skills} color="#22c55e" />
-        <ResourceChip label="MCPs" count={pack.resources.mcps} color="#06b6d4" />
+        <ResourceChip label="prompts" count={pack.resources?.prompts ?? 0} color="#6366f1" />
+        <ResourceChip label="skills" count={pack.resources?.skills ?? 0} color="#22c55e" />
+        <ResourceChip label="MCPs" count={pack.resources?.mcps ?? 0} color="#06b6d4" />
       </div>
     </button>
   );
 }
 
 export function ContextPacksContent() {
-  const [packs, setPacks] = useState<Pack[]>(mockContextPacks);
-  const [selectedPack, setSelectedPack] = useState<Pack | null>(null);
+  const [packs, setPacks] = useState<ContextPack[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedPack, setSelectedPack] = useState<ContextPack | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+
+  useEffect(() => {
+    fetchPacks();
+  }, []);
+
+  const fetchPacks = async () => {
+    try {
+      setLoading(true);
+      const data = await getContextPacks();
+      setPacks(data);
+    } catch (error) {
+      console.error("Failed to fetch context packs:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="p-8">
@@ -185,11 +214,17 @@ export function ContextPacksContent() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        {packs.map((pack) => (
-          <PackCard key={pack.id} pack={pack} onClick={() => setSelectedPack(pack)} />
-        ))}
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
+          {packs.map((pack) => (
+            <PackCard key={pack.id} pack={pack} onClick={() => setSelectedPack(pack)} />
+          ))}
+        </div>
+      )}
 
       {selectedPack && (
         <PackModal pack={selectedPack} onClose={() => setSelectedPack(null)} />
@@ -199,11 +234,13 @@ export function ContextPacksContent() {
         <CreateModal
           type="context-pack"
           onClose={() => setShowCreate(false)}
-          onSave={(entity) => {
-            setPacks((prev) => [...prev, entity as Pack]);
+          onSave={() => {
+            fetchPacks();
+            setShowCreate(false);
           }}
         />
       )}
     </div>
   );
 }
+

@@ -1,51 +1,50 @@
 "use client";
 
-import { useState } from "react";
-import { mockMcpServers } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+import { getMcpServers, testMcpServer } from "@/lib/api";
 import { CreateModal } from "@/components/create-modal";
 
-type IssueType = "ok" | "warning" | "info";
-type Server = (typeof mockMcpServers)[0];
+interface McpIssue {
+  severity: 'WARNING' | 'ERROR' | 'INFO';
+  field: string;
+  message: string;
+  suggestion: string;
+}
+
+interface Server {
+  id: number | string;
+  name: string;
+  description: string;
+  command: string;
+  args: string[];
+  category: string;
+  validationStatus: 'OK' | 'WARNING' | 'ERROR';
+  issues: McpIssue[];
+  emoji?: string;
+}
 
 interface TestResult {
-  success: boolean;
-  latencyMs: number;
-  message: string;
-  checks: { label: string; ok: boolean }[];
+  valid: boolean;
+  status: string;
+  issues: McpIssue[];
+  testedAt: string;
 }
 
-const issueColors: Record<IssueType, { bg: string; text: string; border: string }> = {
-  ok: { bg: "rgba(34,197,94,0.06)", text: "#4ade80", border: "#22c55e" },
-  warning: { bg: "rgba(245,158,11,0.06)", text: "#fbbf24", border: "#f59e0b" },
-  info: { bg: "rgba(99,102,241,0.06)", text: "#818cf8", border: "#6366f1" },
+const severityColors: Record<string, { bg: string; text: string; border: string }> = {
+  OK: { bg: "rgba(34,197,94,0.06)", text: "#4ade80", border: "#22c55e" },
+  INFO: { bg: "rgba(99,102,241,0.06)", text: "#818cf8", border: "#6366f1" },
+  WARNING: { bg: "rgba(245,158,11,0.06)", text: "#fbbf24", border: "#f59e0b" },
+  ERROR: { bg: "rgba(239,68,68,0.06)", text: "#f87171", border: "#ef4444" },
 };
 
-async function runTest(server: Server): Promise<TestResult> {
-  await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800));
-  const success = server.status === "ok";
-  const latencyMs = Math.floor(80 + Math.random() * 220);
-  return {
-    success,
-    latencyMs,
-    message: success
-      ? "Conexion establecida correctamente."
-      : "El servidor respondio con advertencias.",
-    checks: [
-      { label: "Proceso disponible", ok: true },
-      { label: "Protocolo MCP valido", ok: success },
-      { label: "Herramientas registradas", ok: success },
-      { label: "Sin errores de configuracion", ok: success },
-    ],
-  };
-}
-
 function TestResultPanel({ result, onClose }: { result: TestResult; onClose: () => void }) {
+  const isOk = result.status === "OK" || result.valid;
   return (
     <div
       className="mt-3 rounded-xl p-4 flex flex-col gap-3"
       style={{
-        background: result.success ? "rgba(34,197,94,0.05)" : "rgba(245,158,11,0.05)",
-        border: `1px solid ${result.success ? "rgba(34,197,94,0.2)" : "rgba(245,158,11,0.2)"}`,
+        background: isOk ? "rgba(34,197,94,0.05)" : "rgba(245,158,11,0.05)",
+        border: `1px solid ${isOk ? "rgba(34,197,94,0.2)" : "rgba(245,158,11,0.2)"}`,
       }}
     >
       {/* Summary row */}
@@ -54,17 +53,17 @@ function TestResultPanel({ result, onClose }: { result: TestResult; onClose: () 
           <div
             className="w-2 h-2 rounded-full"
             style={{
-              background: result.success ? "#22c55e" : "#f59e0b",
-              boxShadow: result.success ? "0 0 6px #22c55e" : "0 0 6px #f59e0b",
+              background: isOk ? "#22c55e" : "#f59e0b",
+              boxShadow: isOk ? "0 0 6px #22c55e" : "0 0 6px #f59e0b",
             }}
           />
-          <span className="font-bold text-xs" style={{ color: result.success ? "#4ade80" : "#fbbf24" }}>
-            {result.success ? "Test exitoso" : "Test con advertencias"}
+          <span className="font-bold text-xs" style={{ color: isOk ? "#4ade80" : "#fbbf24" }}>
+            {isOk ? "Test exitoso" : "Test con advertencias"}
           </span>
         </div>
         <div className="flex items-center gap-3">
           <span className="font-mono text-xs" style={{ color: "#6b6b8a" }}>
-            {result.latencyMs}ms
+            {new Date(result.testedAt).toLocaleTimeString()}
           </span>
           <button
             onClick={onClose}
@@ -76,34 +75,24 @@ function TestResultPanel({ result, onClose }: { result: TestResult; onClose: () 
         </div>
       </div>
 
-      {/* Message */}
-      <p className="text-xs" style={{ color: "#c8c8e0" }}>{result.message}</p>
-
-      {/* Checks */}
+      {/* Issues */}
       <div className="flex flex-col gap-1.5">
-        {result.checks.map((check) => (
-          <div key={check.label} className="flex items-center gap-2">
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 12 12"
-              fill="none"
-              style={{ flexShrink: 0 }}
-            >
-              {check.ok ? (
-                <path d="M2 6l3 3 5-5" stroke="#4ade80" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              ) : (
-                <>
-                  <line x1="2" y1="2" x2="10" y2="10" stroke="#f87171" strokeWidth="1.5" strokeLinecap="round" />
-                  <line x1="10" y1="2" x2="2" y2="10" stroke="#f87171" strokeWidth="1.5" strokeLinecap="round" />
-                </>
-              )}
-            </svg>
-            <span className="text-xs" style={{ color: check.ok ? "#86efac" : "#fca5a5" }}>
-              {check.label}
-            </span>
+        {result.issues.length > 0 ? result.issues.map((issue, idx) => (
+          <div key={idx} className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+               <span className="text-xs font-bold" style={{ color: severityColors[issue.severity]?.text || "#c8c8e0" }}>
+                  [{issue.field}] {issue.message}
+               </span>
+            </div>
+            {issue.suggestion && (
+              <p className="text-[10px] ml-4" style={{ color: "#6b6b8a" }}>
+                Sugerencia: {issue.suggestion}
+              </p>
+            )}
           </div>
-        ))}
+        )) : (
+          <p className="text-xs" style={{ color: "#86efac" }}>Servidor validado correctamente.</p>
+        )}
       </div>
     </div>
   );
@@ -122,27 +111,28 @@ function McpCard({
   onTest: () => void;
   onDismissResult: () => void;
 }) {
-  const isWarning = server.status === "warning";
+  const isWarning = server.validationStatus === "WARNING";
+  const isError = server.validationStatus === "ERROR";
 
   return (
     <div
       className="rounded-2xl p-5 flex flex-col gap-4 transition-all duration-150"
       style={{
         background: "#12121a",
-        border: `1px solid ${isWarning ? "rgba(245,158,11,0.3)" : "rgba(34,197,94,0.2)"}`,
+        border: `1px solid ${isError ? "rgba(239,68,68,0.3)" : isWarning ? "rgba(245,158,11,0.3)" : "rgba(34,197,94,0.2)"}`,
       }}
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">{server.emoji}</span>
+            <span className="text-xl">{server.emoji || "🔌"}</span>
             <p className="font-black text-white">{server.name}</p>
             <div
               className="w-1.5 h-1.5 rounded-full"
               style={{
-                background: isWarning ? "#f59e0b" : "#22c55e",
-                boxShadow: isWarning ? "0 0 6px #f59e0b" : "0 0 6px #22c55e",
+                background: isError ? "#ef4444" : isWarning ? "#f59e0b" : "#22c55e",
+                boxShadow: isError ? "0 0 6px #ef4444" : isWarning ? "0 0 6px #f59e0b" : "0 0 6px #22c55e",
               }}
             />
           </div>
@@ -150,38 +140,43 @@ function McpCard({
             className="font-mono text-xs truncate"
             style={{ color: "#3d3d55", maxWidth: "280px" }}
           >
-            {server.command}
+            {server.command} {server.args?.join(" ")}
           </p>
         </div>
         <span
           className="font-mono text-xs px-2 py-0.5 rounded-full flex-shrink-0"
           style={{
-            background: isWarning ? "rgba(245,158,11,0.1)" : "rgba(34,197,94,0.1)",
-            color: isWarning ? "#f59e0b" : "#22c55e",
-            border: isWarning ? "1px solid rgba(245,158,11,0.25)" : "1px solid rgba(34,197,94,0.25)",
+            background: isError ? "rgba(239,68,68,0.1)" : isWarning ? "rgba(245,158,11,0.1)" : "rgba(34,197,94,0.1)",
+            color: isError ? "#f87171" : isWarning ? "#f59e0b" : "#22c55e",
+            border: `1px solid ${isError ? "rgba(239,68,68,0.25)" : isWarning ? "rgba(245,158,11,0.25)" : "rgba(34,197,94,0.25)"}`,
           }}
         >
-          {server.status.toUpperCase()}
+          {server.validationStatus}
         </span>
       </div>
 
       {/* Issues */}
       <div className="flex flex-col gap-1.5">
         {server.issues.map((issue, idx) => {
-          const colors = issueColors[issue.type as IssueType];
+          const colors = severityColors[issue.severity] || severityColors.INFO;
           return (
             <div
               key={idx}
-              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium"
+              className="flex flex-col gap-1 rounded-lg px-3 py-2 text-xs font-medium"
               style={{
                 background: colors.bg,
                 borderLeft: `2px solid ${colors.border}`,
               }}
             >
-              <span style={{ color: colors.text }}>
-                {issue.type === "ok" ? "+" : issue.type === "warning" ? "!" : "i"}
-              </span>
-              <span style={{ color: colors.text }}>{issue.message}</span>
+              <div className="flex items-center gap-2">
+                <span style={{ color: colors.text }}>
+                  {issue.severity === "ERROR" ? "!" : issue.severity === "WARNING" ? "⚠" : "i"}
+                </span>
+                <span style={{ color: colors.text }}>{issue.message}</span>
+              </div>
+              {issue.suggestion && (
+                <p className="text-[10px] ml-4" style={{ color: "#6b6b8a" }}>{issue.suggestion}</p>
+              )}
             </div>
           );
         })}
@@ -231,39 +226,64 @@ function McpCard({
 }
 
 export function McpRegistryContent() {
-  const [servers, setServers] = useState<Server[]>(mockMcpServers);
+  const [servers, setServers] = useState<Server[]>([]);
+  const [loading, setLoading] = useState(true);
   const [testingAll, setTestingAll] = useState(false);
-  const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
-  const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
+  const [testingIds, setTestingIds] = useState<Set<string | number>>(new Set());
+  const [testResults, setTestResults] = useState<Record<string | number, TestResult>>({});
   const [showCreate, setShowCreate] = useState(false);
+
+  useEffect(() => {
+    fetchServers();
+  }, []);
+
+  const fetchServers = async () => {
+    try {
+      setLoading(true);
+      const data = await getMcpServers();
+      setServers(data);
+    } catch (error) {
+      console.error("Failed to fetch MCP servers:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleTestAll = async () => {
     setTestingAll(true);
     const allIds = new Set(servers.map((s) => s.id));
     setTestingIds(allIds);
 
-    const results = await Promise.all(servers.map((s) => runTest(s).then((r) => ({ id: s.id, r }))));
-    const map: Record<string, TestResult> = {};
-    results.forEach(({ id, r }) => { map[id] = r; });
-
-    setTestResults((prev) => ({ ...prev, ...map }));
-    setTestingIds(new Set());
-    setTestingAll(false);
+    try {
+      const results = await Promise.all(servers.map((s) => testMcpServer(s.id).then((r) => ({ id: s.id, r }))));
+      const map: Record<string | number, TestResult> = {};
+      results.forEach(({ id, r }) => { map[id] = r; });
+      setTestResults((prev) => ({ ...prev, ...map }));
+    } catch (error) {
+      console.error("Failed to test all servers:", error);
+    } finally {
+      setTestingIds(new Set());
+      setTestingAll(false);
+    }
   };
 
-  const handleTestOne = async (id: string) => {
+  const handleTestOne = async (id: string | number) => {
     setTestingIds((prev) => new Set([...prev, id]));
-    const server = servers.find((s) => s.id === id)!;
-    const result = await runTest(server);
-    setTestResults((prev) => ({ ...prev, [id]: result }));
-    setTestingIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
+    try {
+      const result = await testMcpServer(id);
+      setTestResults((prev) => ({ ...prev, [id]: result }));
+    } catch (error) {
+      console.error(`Failed to test server ${id}:`, error);
+    } finally {
+      setTestingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
-  const dismissResult = (id: string) => {
+  const dismissResult = (id: string | number) => {
     setTestResults((prev) => {
       const next = { ...prev };
       delete next[id];
@@ -295,7 +315,7 @@ export function McpRegistryContent() {
           </button>
           <button
             onClick={handleTestAll}
-            disabled={testingAll}
+            disabled={testingAll || loading}
             className="flex items-center gap-2 py-2 px-4 rounded-xl text-sm font-black transition-all duration-150 disabled:opacity-60 hover:brightness-110"
             style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)", color: "white" }}
           >
@@ -314,28 +334,36 @@ export function McpRegistryContent() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        {servers.map((server) => (
-          <McpCard
-            key={server.id}
-            server={server}
-            testing={testingIds.has(server.id)}
-            testResult={testResults[server.id] ?? null}
-            onTest={() => handleTestOne(server.id)}
-            onDismissResult={() => dismissResult(server.id)}
-          />
-        ))}
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
+          {servers.map((server) => (
+            <McpCard
+              key={server.id}
+              server={server}
+              testing={testingIds.has(server.id)}
+              testResult={testResults[server.id] ?? null}
+              onTest={() => handleTestOne(server.id)}
+              onDismissResult={() => dismissResult(server.id)}
+            />
+          ))}
+        </div>
+      )}
 
       {showCreate && (
         <CreateModal
           type="mcp"
           onClose={() => setShowCreate(false)}
-          onSave={(entity) => {
-            setServers((prev) => [...prev, entity as Server]);
+          onSave={() => {
+            fetchServers();
+            setShowCreate(false);
           }}
         />
       )}
     </div>
   );
 }
+

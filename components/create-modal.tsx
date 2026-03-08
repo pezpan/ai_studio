@@ -2,7 +2,13 @@
 
 import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { createPrompt } from "@/lib/api";
+import { 
+  createPrompt, 
+  createSkill, 
+  createWorkflow, 
+  createMcpServer, 
+  createContextPack 
+} from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
@@ -492,78 +498,59 @@ export function CreateModal({ type, onClose, onSave }: CreateModalProps) {
     setSaveError(null);
 
     try {
-      const id = Date.now().toString();
-
       if (type === "prompt") {
         const content = data.content?.trim() ?? "";
-        const saved = await createPrompt({
+        await createPrompt({
           name: data.name.trim(),
           content,
           category: data.category ?? "development",
-        });
-        onSave({
-          id: saved.id ?? id,
-          name: saved.name,
-          preview: (saved.preview ?? content.slice(0, 160)) || saved.name,
-          category: saved.category,
-          status: saved.status ?? "pending",
-          quality: saved.quality ?? 70,
-          content,
-          sections: saved.sections ?? { rol: "", tarea: "", audiencia: "", formato: "", contexto: "" },
         });
       } else if (type === "skill") {
         const params = (data.parameters ?? "")
           .split(",")
           .map((p) => p.trim())
           .filter(Boolean);
-        onSave({
-          id,
+        await createSkill({
           name: data.name,
           category: data.category,
           description: data.description ?? "",
           parameters: params,
-          uses: 0,
-          quality: 70,
           template: data.template ?? "",
         });
       } else if (type === "workflow") {
-        onSave({
-          id,
+        await createWorkflow({
           name: data.name,
-          emoji: data.emoji || "?",
+          emoji: data.emoji || "⚙️",
           description: data.description ?? "",
           steps: workflowSteps.map((s, i) => ({
-            id: `s${i + 1}`,
+            stepOrder: i + 1,
             name: s.name || `Paso ${i + 1}`,
             type: s.type,
-            skill: s.skill || null,
+            skillName: s.skill || null,
             description: s.description,
           })),
         });
       } else if (type === "mcp") {
-        onSave({
-          id,
+        await createMcpServer({
           name: data.name,
-          emoji: data.emoji || "?",
+          emoji: data.emoji || "🔌",
           command: data.command ?? "",
-          status: data.status ?? "ok",
-          issues: [{ type: "info", message: "Servidor recien agregado, ejecuta un test para verificarlo." }],
+          category: data.category ?? "other",
         });
       } else if (type === "context-pack") {
-        onSave({
-          id,
+        await createContextPack({
           name: data.name,
-          emoji: data.emoji || "?",
+          emoji: data.emoji || "📦",
           description: data.description ?? "",
           resources: {
             prompts: parseInt(data.prompts ?? "0") || 0,
             skills: parseInt(data.skills ?? "0") || 0,
             mcps: parseInt(data.mcps ?? "0") || 0,
           },
-          mcpConfig: { mcpServers: {} },
         });
       }
 
+      onSave({}); // Signal success, caller will re-fetch
       setSaving(false);
       onClose();
     } catch (err) {

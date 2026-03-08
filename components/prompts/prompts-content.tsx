@@ -1,12 +1,28 @@
 "use client";
 
-import { useState } from "react";
-import { mockPrompts } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+import { getPrompts, improvePrompt, deletePrompt, exportPrompt } from "@/lib/api";
 import { AiBadge, categoryVariant } from "@/components/ui/ai-badge";
 import { cn } from "@/lib/utils";
 import { CreateModal } from "@/components/create-modal";
+import { useToast } from "@/hooks/use-toast";
 
-type Prompt = (typeof mockPrompts)[0] & { content?: string };
+interface Prompt {
+  id: number | string;
+  name: string;
+  preview: string;
+  category: string;
+  status: "pending" | "improved";
+  quality: number;
+  content?: string;
+  sections: {
+    rol: string;
+    tarea: string;
+    audiencia: string;
+    formato: string;
+    contexto: string;
+  };
+}
 
 const sectionLabels = [
   { key: "rol", label: "ROL" },
@@ -113,19 +129,18 @@ function PromptDetail({
   onImprove,
   onExport,
   onDelete,
+  improving,
 }: {
   prompt: Prompt;
   onImprove: () => Promise<void>;
   onExport: () => void;
   onDelete: () => void;
+  improving: boolean;
 }) {
-  const [improving, setImproving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const handleImprove = async () => {
-    setImproving(true);
     await onImprove();
-    setImproving(false);
   };
 
   const handleDelete = () => {
@@ -137,6 +152,10 @@ function PromptDetail({
       setTimeout(() => setConfirmDelete(false), 3000);
     }
   };
+
+  // Check if prompt has improved sections (at least ROL and TAREA should be present)
+  const hasImprovedSections = prompt.sections?.rol && prompt.sections?.tarea;
+  const showSections = prompt.status === "improved" && hasImprovedSections;
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
@@ -154,7 +173,7 @@ function PromptDetail({
 
       {/* Content — plain text if not improved, structured sections if improved */}
       <div className="flex-1 px-5 py-4 flex flex-col gap-4">
-        {prompt.status === "improved" ? (
+        {showSections ? (
           sectionLabels.map(({ key, label }) => (
             <div key={key}>
               <p
@@ -168,7 +187,7 @@ function PromptDetail({
                 style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
               >
                 <p className="font-mono text-xs leading-relaxed" style={{ color: "#a8a8c0" }}>
-                  {prompt.sections[key]}
+                  {prompt.sections[key] || "N/A"}
                 </p>
               </div>
             </div>
@@ -189,7 +208,7 @@ function PromptDetail({
                 className="text-sm leading-relaxed whitespace-pre-wrap"
                 style={{ color: "#a8a8c0" }}
               >
-                {(prompt as Prompt).content || prompt.preview}
+                {prompt.content || prompt.preview}
               </p>
             </div>
             <p className="font-mono text-xs mt-2" style={{ color: "#3d3d55" }}>
@@ -265,67 +284,83 @@ function PromptDetail({
 }
 
 export function PromptsContent() {
-  const [prompts, setPrompts] = useState<Prompt[]>(mockPrompts);
+  const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [selected, setSelected] = useState<Prompt | null>(null);
   const [exported, setExported] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [improving, setImproving] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    fetchPrompts();
+  }, []);
+
+  const fetchPrompts = async () => {
+    try {
+      setLoading(true);
+      const data = await getPrompts();
+      setPrompts(data);
+    } catch (error) {
+      console.error("Failed to fetch prompts:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleImprove = async () => {
-    await new Promise((r) => setTimeout(r, 2000));
     if (!selected) return;
-
-    // If the prompt was created as plain text, simulate structuring it into sections
-    const wasPlainText = !selected.sections.rol && !selected.sections.tarea;
-    const content = (selected as Prompt).content ?? selected.preview;
-    const improvedSections = wasPlainText
-      ? {
-          rol: content,
-          tarea: "(Estructurado por IA a partir del contenido original)",
-          audiencia: "",
-          formato: "",
-          contexto: "",
-        }
-      : selected.sections;
-
-    const updated = {
-      ...selected,
-      status: "improved",
-      quality: Math.min(100, selected.quality + 5),
-      sections: improvedSections,
-    };
-
-    setPrompts((prev) => prev.map((p) => (p.id === selected.id ? updated : p)));
-    setSelected(updated);
-  };
-
-  const handleExport = () => {
-    if (!selected) return;
-
-    let fileContent: string;
-    if (selected.status === "improved") {
-      const sections = sectionLabels
-        .map(({ key, label }) => `## ${label}\n${selected.sections[key]}`)
-        .join("\n\n");
-      fileContent = `# ${selected.name}\n\n${sections}`;
-    } else {
-      fileContent = `# ${selected.name}\n\n${(selected as Prompt).content || selected.preview}`;
+    try {
+      setImproving(true);
+      await improvePrompt(selected.id);
+      toast({
+        title: "Prompt mejorado",
+        description: "El prompt ha sido estructurado exitosamente.",
+      });
+      // Re-fetch to get updated data
+      const allPrompts = await getPrompts();
+      setPrompts(allPrompts);
+      const updated = allPrompts.find((p: Prompt) => p.id === selected.id);
+      if (updated) setSelected(updated);
+    } catch (error) {
+      console.warn("Failed to improve prompt:", error);
+      toast({
+        title: "Error al mejorar",
+        description: "No se pudo conectar con la IA. Verifica tu configuración.",
+      });
+    } finally {
+      setImproving(false);
     }
-
-    const blob = new Blob([fileContent], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${selected.name.replace(/\s+/g, "_")}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setExported(selected.name);
-    setTimeout(() => setExported(null), 2500);
   };
 
-  const handleDelete = () => {
+  const handleExport = async () => {
     if (!selected) return;
-    setPrompts((prev) => prev.filter((p) => p.id !== selected.id));
-    setSelected(null);
+
+    try {
+      const { content } = await exportPrompt(selected.id);
+      const blob = new Blob([content], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${selected.name.replace(/\s+/g, "_")}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExported(selected.name);
+      setTimeout(() => setExported(null), 2500);
+    } catch (error) {
+      console.error("Failed to export prompt:", error);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selected) return;
+    try {
+      await deletePrompt(selected.id);
+      setPrompts((prev) => prev.filter((p) => p.id !== selected.id));
+      setSelected(null);
+    } catch (error) {
+      console.error("Failed to delete prompt:", error);
+    }
   };
 
   return (
@@ -364,7 +399,11 @@ export function PromptsContent() {
       <div className="flex gap-5 items-start">
         {/* List */}
         <div className="flex-1 flex flex-col gap-3">
-          {prompts.length === 0 ? (
+          {loading ? (
+             <div className="flex items-center justify-center p-10">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+             </div>
+          ) : prompts.length === 0 ? (
             <div
               className="rounded-2xl p-10 text-center"
               style={{ background: "#12121a", border: "1px solid rgba(255,255,255,0.07)" }}
@@ -402,6 +441,7 @@ export function PromptsContent() {
               onImprove={handleImprove}
               onExport={handleExport}
               onDelete={handleDelete}
+              improving={improving}
             />
           ) : (
             <EmptyDetail />
@@ -413,9 +453,9 @@ export function PromptsContent() {
         <CreateModal
           type="prompt"
           onClose={() => setShowCreate(false)}
-          onSave={(entity) => {
-            const p = entity as Prompt;
-            setPrompts((prev) => [p, ...prev]);
+          onSave={() => {
+            fetchPrompts();
+            setShowCreate(false);
           }}
         />
       )}

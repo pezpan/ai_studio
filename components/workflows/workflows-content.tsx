@@ -1,13 +1,34 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { mockWorkflows } from "@/lib/mock-data";
+import { useState, useRef, useEffect } from "react";
+import { getWorkflows, executeWorkflow } from "@/lib/api";
 import { AiBadge } from "@/components/ui/ai-badge";
 import { cn } from "@/lib/utils";
 import { CreateModal } from "@/components/create-modal";
 
-type Workflow = (typeof mockWorkflows)[0];
-type StepStatus = "pending" | "running" | "done";
+interface WorkflowStep {
+  id: number | string;
+  stepOrder: number;
+  name: string;
+  type: 'SKILL' | 'FREE_PROMPT' | 'TRANSFORM';
+  skillId?: number;
+  skillName?: string;
+  transformType?: string;
+  promptTemplate?: string;
+  description?: string;
+}
+
+interface Workflow {
+  id: number | string;
+  name: string;
+  description: string;
+  category: string;
+  steps: WorkflowStep[];
+  executionCount: number;
+  emoji?: string;
+}
+
+type StepStatus = "pending" | "running" | "done" | "error";
 
 const stepTypeVariant: Record<string, "indigo" | "cyan" | "violet"> = {
   SKILL: "indigo",
@@ -16,7 +37,9 @@ const stepTypeVariant: Record<string, "indigo" | "cyan" | "violet"> = {
 };
 
 interface StepResult {
-  text: string;
+  output: string;
+  success: boolean;
+  errorMessage?: string;
 }
 
 function WorkflowRunner({ workflow }: { workflow: Workflow }) {
@@ -32,53 +55,50 @@ function WorkflowRunner({ workflow }: { workflow: Workflow }) {
     completed: number;
     time: string;
     tokens: number;
+    finalOutput: string;
   } | null>(null);
 
-  const abortRef = useRef(false);
+  // Update statuses when workflow changes
+  useEffect(() => {
+    setStepStatuses(workflow.steps.map(() => "pending"));
+    setStepResults(workflow.steps.map(() => null));
+    setMetrics(null);
+  }, [workflow]);
 
   const handleExecute = async () => {
     if (!input.trim() || running) return;
-    abortRef.current = false;
     setRunning(true);
     setMetrics(null);
     setStepResults(workflow.steps.map(() => null));
-    setStepStatuses(workflow.steps.map(() => "pending"));
+    setStepStatuses(workflow.steps.map(() => "running"));
 
-    const startTime = Date.now();
-    let totalTokens = 0;
-
-    for (let i = 0; i < workflow.steps.length; i++) {
-      if (abortRef.current) break;
-
-      setStepStatuses((prev) => {
-        const next = [...prev];
-        next[i] = "running";
-        return next;
+    try {
+      const result = await executeWorkflow(workflow.id, input);
+      
+      // Update step results based on API response
+      const results = workflow.steps.map((step, idx) => {
+        const stepRes = result.stepResults?.find((sr: any) => sr.stepOrder === (idx + 1));
+        return stepRes ? { 
+          output: stepRes.output, 
+          success: stepRes.success,
+          errorMessage: stepRes.errorMessage 
+        } : null;
       });
 
-      const delay = 1200 + Math.random() * 800;
-      await new Promise((r) => setTimeout(r, delay));
-
-      const tokens = Math.floor(Math.random() * 200 + 100);
-      totalTokens += tokens;
-
-      const resultText = `Step ${i + 1} completed — ${workflow.steps[i].name}\n\nProcessed via ${workflow.steps[i].type} operation${workflow.steps[i].skill ? ` using skill "${workflow.steps[i].skill}"` : ""}. Generated ${tokens} tokens. Output is structured and ready for next step.`;
-
-      setStepStatuses((prev) => {
-        const next = [...prev];
-        next[i] = "done";
-        return next;
+      setStepResults(results);
+      setStepStatuses(results.map(r => r?.success ? "done" : "error"));
+      setMetrics({
+        completed: result.completedSteps || workflow.steps.length,
+        time: (result.totalExecutionTimeMs / 1000).toFixed(1),
+        tokens: result.totalTokensUsed || 0,
+        finalOutput: result.finalOutput
       });
-      setStepResults((prev) => {
-        const next = [...prev];
-        next[i] = { text: resultText };
-        return next;
-      });
+    } catch (error) {
+      console.error("Workflow execution failed:", error);
+      setStepStatuses(workflow.steps.map(() => "error"));
+    } finally {
+      setRunning(false);
     }
-
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    setMetrics({ completed: workflow.steps.length, time: elapsed, tokens: totalTokens });
-    setRunning(false);
   };
 
   return (
@@ -96,7 +116,7 @@ function WorkflowRunner({ workflow }: { workflow: Workflow }) {
       >
         <div>
           <p className="font-black text-white text-base">
-            {workflow.emoji} {workflow.name}
+            {workflow.emoji || "⚙️"} {workflow.name}
           </p>
           <p className="font-mono text-xs mt-0.5" style={{ color: "#6b6b8a" }}>
             {workflow.steps.length} steps
@@ -151,7 +171,7 @@ function WorkflowRunner({ workflow }: { workflow: Workflow }) {
 
         {/* Steps */}
         <div className="flex flex-col">
-          {workflow.steps.map((step, idx) => {
+          {(workflow.steps || []).sort((a,b) => a.stepOrder - b.stepOrder).map((step, idx) => {
             const status = stepStatuses[idx];
             const result = stepResults[idx];
 
@@ -169,6 +189,8 @@ function WorkflowRunner({ workflow }: { workflow: Workflow }) {
                       background:
                         status === "done"
                           ? "#22c55e"
+                          : status === "error"
+                          ? "#ef4444"
                           : status === "running"
                           ? "transparent"
                           : "rgba(255,255,255,0.05)",
@@ -177,6 +199,8 @@ function WorkflowRunner({ workflow }: { workflow: Workflow }) {
                           ? "2px solid rgba(99,102,241,0.3)"
                           : status === "done"
                           ? "2px solid #22c55e"
+                          : status === "error"
+                          ? "2px solid #ef4444"
                           : "2px solid rgba(255,255,255,0.1)",
                       borderTopColor: status === "running" ? "#6366f1" : undefined,
                     }}
@@ -185,6 +209,8 @@ function WorkflowRunner({ workflow }: { workflow: Workflow }) {
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                         <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
+                    ) : status === "error" ? (
+                       <span className="text-white font-bold">!</span>
                     ) : status !== "running" ? (
                       <span className="font-mono text-xs font-bold" style={{ color: "#6b6b8a" }}>
                         {idx + 1}
@@ -216,7 +242,7 @@ function WorkflowRunner({ workflow }: { workflow: Workflow }) {
                     <AiBadge variant={stepTypeVariant[step.type] ?? "default"}>
                       {step.type}
                     </AiBadge>
-                    {step.skill && (
+                    {(step.skillName || step.skillId) && (
                       <span
                         className="font-mono text-xs px-1.5 py-0.5 rounded-md"
                         style={{
@@ -224,28 +250,30 @@ function WorkflowRunner({ workflow }: { workflow: Workflow }) {
                           color: "#6b6b8a",
                         }}
                       >
-                        {step.skill}
+                        {step.skillName || `Skill #${step.skillId}`}
                       </span>
                     )}
                   </div>
-                  <p className="text-xs mb-2" style={{ color: "#6b6b8a" }}>
-                    {step.description}
-                  </p>
+                  {step.description && (
+                    <p className="text-xs mb-2" style={{ color: "#6b6b8a" }}>
+                      {step.description}
+                    </p>
+                  )}
 
                   {/* Output */}
                   {result && (
                     <div
                       className="rounded-xl p-3 mt-1"
                       style={{
-                        background: "rgba(34,197,94,0.05)",
-                        border: "1px solid rgba(34,197,94,0.15)",
+                        background: result.success ? "rgba(34,197,94,0.05)" : "rgba(239,68,68,0.05)",
+                        border: result.success ? "1px solid rgba(34,197,94,0.15)" : "1px solid rgba(239,68,68,0.15)",
                       }}
                     >
                       <pre
                         className="font-mono text-xs leading-relaxed whitespace-pre-wrap"
-                        style={{ color: "#86efac" }}
+                        style={{ color: result.success ? "#86efac" : "#fca5a5" }}
                       >
-                        {result.text}
+                        {result.output || result.errorMessage}
                       </pre>
                     </div>
                   )}
@@ -281,6 +309,16 @@ function WorkflowRunner({ workflow }: { workflow: Workflow }) {
               ))}
             </div>
 
+            {/* Final Output */}
+            <div className="mt-2">
+               <p className="font-mono text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "#6b6b8a" }}>
+                  Final Output
+               </p>
+               <div className="rounded-xl p-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <p className="text-sm leading-relaxed text-white whitespace-pre-wrap">{metrics.finalOutput}</p>
+               </div>
+            </div>
+
             {/* Download full result */}
             <button
               onClick={() => {
@@ -294,9 +332,12 @@ function WorkflowRunner({ workflow }: { workflow: Workflow }) {
                 ];
                 stepResults.forEach((r, i) => {
                   lines.push(`[Step ${i + 1}] ${workflow.steps[i]?.name ?? ""}`);
-                  lines.push(r?.text ?? "(no output)");
+                  lines.push(r?.output || r?.errorMessage || "(no output)");
                   lines.push("");
                 });
+                lines.push("--- FINAL OUTPUT ---");
+                lines.push(metrics.finalOutput);
+                lines.push("");
                 lines.push("--- METRICS ---");
                 lines.push(`Steps: ${metrics.completed}/${workflow.steps.length}`);
                 lines.push(`Time: ${metrics.time}s`);
@@ -331,9 +372,27 @@ function WorkflowRunner({ workflow }: { workflow: Workflow }) {
 }
 
 export function WorkflowsContent() {
-  const [workflows, setWorkflows] = useState<Workflow[]>(mockWorkflows);
-  const [selected, setSelected] = useState<Workflow>(mockWorkflows[0]);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [selected, setSelected] = useState<Workflow | null>(null);
+  const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+
+  useEffect(() => {
+    fetchWorkflows();
+  }, []);
+
+  const fetchWorkflows = async () => {
+    try {
+      setLoading(true);
+      const data = await getWorkflows();
+      setWorkflows(data);
+      if (data.length > 0 && !selected) setSelected(data[0]);
+    } catch (error) {
+      console.error("Failed to fetch workflows:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="p-8 h-screen flex flex-col">
@@ -357,53 +416,67 @@ export function WorkflowsContent() {
         </button>
       </div>
 
-      <div className="flex gap-5 flex-1 min-h-0">
-        {/* List */}
-        <div className="flex flex-col gap-3" style={{ width: "280px", flexShrink: 0 }}>
-          {workflows.map((wf) => (
-            <button
-              key={wf.id}
-              onClick={() => setSelected(wf)}
-              className="text-left rounded-2xl p-4 transition-all duration-150"
-              style={{
-                background: selected.id === wf.id ? "rgba(99,102,241,0.08)" : "#12121a",
-                border: `1px solid ${selected.id === wf.id ? "rgba(99,102,241,0.35)" : "rgba(255,255,255,0.07)"}`,
-                borderLeft: selected.id === wf.id ? "3px solid #6366f1" : undefined,
-              }}
-            >
-              <p className="font-black text-sm text-white mb-1">
-                {wf.emoji} {wf.name}
-              </p>
-              <p
-                className="font-mono text-xs mb-2"
-                style={{ color: "#6366f1" }}
+      {loading ? (
+        <div className="flex items-center justify-center flex-1">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
+        </div>
+      ) : (
+        <div className="flex gap-5 flex-1 min-h-0">
+          {/* List */}
+          <div className="flex flex-col gap-3 overflow-y-auto" style={{ width: "280px", flexShrink: 0 }}>
+            {workflows.length === 0 ? (
+              <p className="text-sm" style={{ color: "#6b6b8a" }}>No workflows found</p>
+            ) : workflows.map((wf) => (
+              <button
+                key={wf.id}
+                onClick={() => setSelected(wf)}
+                className="text-left rounded-2xl p-4 transition-all duration-150"
+                style={{
+                  background: selected?.id === wf.id ? "rgba(99,102,241,0.08)" : "#12121a",
+                  border: `1px solid ${selected?.id === wf.id ? "rgba(99,102,241,0.35)" : "rgba(255,255,255,0.07)"}`,
+                  borderLeft: selected?.id === wf.id ? "3px solid #6366f1" : undefined,
+                }}
               >
-                {wf.steps.map((s) => s.type).join(" → ")}
-              </p>
-              <p className="text-xs leading-relaxed" style={{ color: "#6b6b8a" }}>
-                {wf.description}
-              </p>
-            </button>
-          ))}
-        </div>
+                <p className="font-black text-sm text-white mb-1">
+                  {wf.emoji || "⚙️"} {wf.name}
+                </p>
+                <p
+                  className="font-mono text-xs mb-2"
+                  style={{ color: "#6366f1" }}
+                >
+                  {(wf.steps || []).sort((a,b) => a.stepOrder - b.stepOrder).map((s) => s.type).join(" → ")}
+                </p>
+                <p className="text-xs leading-relaxed line-clamp-2" style={{ color: "#6b6b8a" }}>
+                  {wf.description}
+                </p>
+              </button>
+            ))}
+          </div>
 
-        {/* Runner */}
-        <div className="flex-1 min-h-0">
-          <WorkflowRunner workflow={selected} />
+          {/* Runner */}
+          <div className="flex-1 min-h-0">
+            {selected ? (
+              <WorkflowRunner workflow={selected} />
+            ) : (
+              <div className="flex items-center justify-center h-full text-center" style={{ background: "#12121a", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "1rem" }}>
+                <p style={{ color: "#6b6b8a" }}>Select a workflow to run</p>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {showCreate && (
         <CreateModal
           type="workflow"
           onClose={() => setShowCreate(false)}
-          onSave={(entity) => {
-            const wf = entity as Workflow;
-            setWorkflows((prev) => [...prev, wf]);
-            setSelected(wf);
+          onSave={() => {
+            fetchWorkflows();
+            setShowCreate(false);
           }}
         />
       )}
     </div>
   );
 }
+

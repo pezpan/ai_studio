@@ -1,11 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { mockSkills } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+import { getSkills } from "@/lib/api";
 import { AiBadge, categoryVariant } from "@/components/ui/ai-badge";
 import { CreateModal } from "@/components/create-modal";
 
-type Skill = (typeof mockSkills)[0];
+interface Skill {
+  id: number | string;
+  name: string;
+  description: string;
+  template: string;
+  category: string;
+  parameters: string[];
+  usageCount: number;
+  qualityScore: number;
+}
 
 /* ------------------------------------------------------------------ */
 /*  UseSkillModal                                                       */
@@ -16,8 +25,10 @@ function UseSkillModal({ skill, onClose }: { skill: Skill; onClose: () => void }
   const [copied, setCopied] = useState(false);
 
   const resolvedTemplate = skill.parameters.reduce((tpl, param) => {
+    // Check if param already includes {{ }}
+    const placeholder = param.startsWith("{{") ? param : `{{${param}}}`;
     const key = param.replace(/[{}]/g, "");
-    return tpl.replaceAll(param, values[key] ?? param);
+    return tpl.replaceAll(placeholder, values[key] ?? placeholder);
   }, skill.template);
 
   const handleCopy = () => {
@@ -30,10 +41,9 @@ function UseSkillModal({ skill, onClose }: { skill: Skill; onClose: () => void }
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-6"
       style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }}
-      onClick={(e) => { if ((e.target as HTMLElement).classList.contains("use-skill-overlay")) onClose(); }}
     >
       <div
-        className="use-skill-overlay absolute inset-0"
+        className="absolute inset-0"
         onClick={onClose}
       />
       <div
@@ -243,7 +253,7 @@ function SkillCard({ skill }: { skill: Skill }) {
         {/* Footer */}
         <div className="flex items-center justify-between pt-1 mt-auto">
           <span className="font-mono text-xs font-bold" style={{ color: "#6b6b8a" }}>
-            {skill.uses.toLocaleString()} uses
+            {skill.usageCount?.toLocaleString() || 0} uses
           </span>
           <button
             onClick={() => setActiveSkill(skill)}
@@ -273,8 +283,25 @@ function SkillCard({ skill }: { skill: Skill }) {
 /* ------------------------------------------------------------------ */
 
 export function SkillsContent() {
-  const [skills, setSkills] = useState<Skill[]>(mockSkills);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+
+  useEffect(() => {
+    fetchSkills();
+  }, []);
+
+  const fetchSkills = async () => {
+    try {
+      setLoading(true);
+      const data = await getSkills();
+      setSkills(data);
+    } catch (error) {
+      console.error("Failed to fetch skills:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="p-8">
@@ -298,21 +325,29 @@ export function SkillsContent() {
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        {skills.map((skill) => (
-          <SkillCard key={skill.id} skill={skill} />
-        ))}
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-4">
+          {skills.map((skill) => (
+            <SkillCard key={skill.id} skill={skill} />
+          ))}
+        </div>
+      )}
 
       {showCreate && (
         <CreateModal
           type="skill"
           onClose={() => setShowCreate(false)}
-          onSave={(entity) => {
-            setSkills((prev) => [entity as Skill, ...prev]);
+          onSave={() => {
+            fetchSkills();
+            setShowCreate(false);
           }}
         />
       )}
     </div>
   );
 }
+

@@ -50,7 +50,8 @@ export function AiBadge({
   );
 }
 
-export function categoryVariant(category: string): BadgeVariant {
+export function categoryVariant(category?: string): BadgeVariant {
+  if (!category) return "default";
   const map: Record<string, BadgeVariant> = {
     development: "indigo",
     writing: "cyan",

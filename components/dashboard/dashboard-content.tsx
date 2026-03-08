@@ -1,6 +1,8 @@
 "use client";
 
-import { mockStats, mockCategoryData, mockRecentActivity, mockSkills } from "@/lib/mock-data";
+import { useEffect, useState } from "react";
+import { getStats, getRecentActivity, getTopSkills } from "@/lib/api";
+import { mockCategoryData } from "@/lib/mock-data";
 import {
   BarChart,
   Bar,
@@ -10,51 +12,100 @@ import {
   Tooltip,
 } from "recharts";
 
-const statCards = [
-  {
-    label: "Total Prompts",
-    value: mockStats.prompts,
-    description: "In your library",
-    color: "#6366f1",
-    gradient: "linear-gradient(135deg, #6366f1, #a855f7)",
-  },
-  {
-    label: "MCP Servers",
-    value: mockStats.mcpServers,
-    description: "Configured & active",
-    color: "#06b6d4",
-    gradient: "linear-gradient(135deg, #06b6d4, #0284c7)",
-  },
-  {
-    label: "Skills",
-    value: mockStats.skills,
-    description: "Reusable templates",
-    color: "#22c55e",
-    gradient: "linear-gradient(135deg, #22c55e, #16a34a)",
-  },
-  {
-    label: "Workflows",
-    value: mockStats.workflows,
-    description: "Automated pipelines",
-    color: "#a855f7",
-    gradient: "linear-gradient(135deg, #a855f7, #9333ea)",
-  },
-];
+interface Stats {
+  prompts: number;
+  mcpServers: number;
+  skills: number;
+  workflows: number;
+}
 
-const CustomBar = (props: { x?: number; y?: number; width?: number; height?: number }) => {
-  const { x = 0, y = 0, width = 0, height = 0 } = props;
-  return (
-    <defs>
-      <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#6366f1" />
-        <stop offset="100%" stopColor="#a855f7" />
-      </linearGradient>
-      <rect x={x} y={y} width={width} height={height} fill="url(#barGradient)" rx={4} />
-    </defs>
-  );
+interface RecentActivity {
+  type: string;
+  description: string;
+  timestamp: string;
+}
+
+interface TopSkill {
+  name: string;
+  usageCount: number;
+  qualityScore: number;
+}
+
+const getActivityColor = (type: string) => {
+  switch (type.toLowerCase()) {
+    case "prompt": return "#6366f1";
+    case "skill": return "#22c55e";
+    case "workflow": return "#a855f7";
+    case "mcp": return "#06b6d4";
+    default: return "#6b6b8a";
+  }
 };
 
 export function DashboardContent() {
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [activities, setActivities] = useState<RecentActivity[]>([]);
+  const [topSkills, setTopSkills] = useState<TopSkill[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [s, a, ts] = await Promise.all([
+          getStats(),
+          getRecentActivity(),
+          getTopSkills()
+        ]);
+        setStats(s);
+        setActivities(a);
+        setTopSkills(ts);
+      } catch (error) {
+        console.warn("Failed to fetch dashboard data:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  const statCards = stats ? [
+    {
+      label: "Total Prompts",
+      value: stats.prompts,
+      description: "In your library",
+      color: "#6366f1",
+      gradient: "linear-gradient(135deg, #6366f1, #a855f7)",
+    },
+    {
+      label: "MCP Servers",
+      value: stats.mcpServers,
+      description: "Configured & active",
+      color: "#06b6d4",
+      gradient: "linear-gradient(135deg, #06b6d4, #0284c7)",
+    },
+    {
+      label: "Skills",
+      value: stats.skills,
+      description: "Reusable templates",
+      color: "#22c55e",
+      gradient: "linear-gradient(135deg, #22c55e, #16a34a)",
+    },
+    {
+      label: "Workflows",
+      value: stats.workflows,
+      description: "Automated pipelines",
+      color: "#a855f7",
+      gradient: "linear-gradient(135deg, #a855f7, #9333ea)",
+    },
+  ] : [];
+
+  if (loading) {
+    return (
+      <div className="p-8 max-w-7xl flex items-center justify-center min-h-[60vh]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8 max-w-7xl">
       {/* Header */}
@@ -164,27 +215,29 @@ export function DashboardContent() {
             Latest events in your workspace
           </p>
           <div className="flex flex-col gap-3">
-            {mockRecentActivity.map((item) => (
-              <div key={item.id} className="flex items-start gap-3">
+            {activities.length > 0 ? activities.map((item, idx) => (
+              <div key={idx} className="flex items-start gap-3">
                 <div
                   className="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center mt-0.5"
-                  style={{ background: `${item.color}18` }}
+                  style={{ background: `${getActivityColor(item.type)}18` }}
                 >
                   <div
                     className="w-2 h-2 rounded-full"
-                    style={{ background: item.color }}
+                    style={{ background: getActivityColor(item.type) }}
                   />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium leading-snug" style={{ color: "#c8c8e0" }}>
-                    {item.text}
+                    {item.description}
                   </p>
                   <p className="font-mono text-xs mt-0.5" style={{ color: "#3d3d55" }}>
-                    {item.time}
+                    {item.timestamp}
                   </p>
                 </div>
               </div>
-            ))}
+            )) : (
+              <p className="text-sm" style={{ color: "#6b6b8a" }}>No recent activity</p>
+            )}
           </div>
         </div>
       </div>
@@ -218,11 +271,9 @@ export function DashboardContent() {
             </tr>
           </thead>
           <tbody>
-            {mockSkills
-              .sort((a, b) => b.uses - a.uses)
-              .map((skill, idx) => (
+            {topSkills.map((skill, idx) => (
                 <tr
-                  key={skill.id}
+                  key={idx}
                   className="transition-all duration-150"
                   style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
                   onMouseEnter={(e) =>
@@ -251,18 +302,18 @@ export function DashboardContent() {
                         border: "1px solid rgba(99,102,241,0.2)",
                       }}
                     >
-                      {skill.category}
+                      Skill
                     </span>
                   </td>
                   <td className="px-5 py-3 font-mono text-sm font-bold" style={{ color: "#e8e8f0" }}>
-                    {skill.uses.toLocaleString()}
+                    {skill.usageCount.toLocaleString()}
                   </td>
                   <td className="px-5 py-3">
                     <span
                       className="font-mono text-sm font-bold"
                       style={{ color: "#22c55e" }}
                     >
-                      {skill.quality}%
+                      {skill.qualityScore}%
                     </span>
                   </td>
                 </tr>
@@ -273,3 +324,4 @@ export function DashboardContent() {
     </div>
   );
 }
+

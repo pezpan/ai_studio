@@ -1,42 +1,53 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { mockStats } from "@/lib/mock-data";
-
-const navSections = [
-  {
-    label: "General",
-    items: [
-      { href: "/", label: "Dashboard", icon: "⊞", count: null },
-    ],
-  },
-  {
-    label: "Content",
-    items: [
-      { href: "/prompts", label: "Prompts", icon: "✦", count: mockStats.prompts },
-      { href: "/skills", label: "Skills", icon: "◈", count: mockStats.skills },
-      { href: "/context-packs", label: "Context Packs", icon: "◻", count: 4 },
-    ],
-  },
-  {
-    label: "Automation",
-    items: [
-      { href: "/workflows", label: "Workflows", icon: "⟳", count: mockStats.workflows },
-      { href: "/mcp-registry", label: "MCP Registry", icon: "◉", count: mockStats.mcpServers },
-    ],
-  },
-  {
-    label: "Tools",
-    items: [
-      { href: "/skill-builder", label: "Skill Builder", icon: "✦", count: null },
-    ],
-  },
-];
+import { getStats } from "@/lib/api";
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [stats, setStats] = useState<{
+    prompts: number;
+    skills: number;
+    mcpServers: number;
+    workflows: number;
+  } | null>(null);
+
+  useEffect(() => {
+    getStats().then(setStats).catch(console.error);
+  }, []);
+
+  const navSections = [
+    {
+      label: "General",
+      items: [
+        { href: "/", label: "Dashboard", icon: "⊞", count: null },
+      ],
+    },
+    {
+      label: "Content",
+      items: [
+        { href: "/prompts", label: "Prompts", icon: "✦", count: stats?.prompts ?? 0 },
+        { href: "/skills", label: "Skills", icon: "◈", count: stats?.skills ?? 0 },
+        { href: "/context-packs", label: "Context Packs", icon: "◻", count: 4 },
+      ],
+    },
+    {
+      label: "Automation",
+      items: [
+        { href: "/workflows", label: "Workflows", icon: "⟳", count: stats?.workflows ?? 0 },
+        { href: "/mcp-registry", label: "MCP Registry", icon: "◉", count: stats?.mcpServers ?? 0 },
+      ],
+    },
+    {
+      label: "Tools",
+      items: [
+        { href: "/skill-builder", label: "Skill Builder", icon: "✦", count: null },
+      ],
+    },
+  ];
 
   return (
     <aside
