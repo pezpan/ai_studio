@@ -153,10 +153,6 @@ function PromptDetail({
     }
   };
 
-  // Check if prompt has improved sections (at least ROL and TAREA should be present)
-  const hasImprovedSections = prompt.sections?.rol && prompt.sections?.tarea;
-  const showSections = prompt.status === "improved" && hasImprovedSections;
-
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       {/* Header */}
@@ -173,8 +169,10 @@ function PromptDetail({
 
       {/* Content — plain text if not improved, structured sections if improved */}
       <div className="flex-1 px-5 py-4 flex flex-col gap-4">
-        {showSections ? (
-          sectionLabels.map(({ key, label }) => (
+        {prompt.status === "improved" ? (
+          sectionLabels.map(({ key, label }) => {
+            const sectionValue = prompt.sections?.[key] || "";
+            return (
             <div key={key}>
               <p
                 className="font-mono text-xs font-bold uppercase tracking-widest mb-1.5"
@@ -187,11 +185,11 @@ function PromptDetail({
                 style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
               >
                 <p className="font-mono text-xs leading-relaxed" style={{ color: "#a8a8c0" }}>
-                  {prompt.sections[key] || "N/A"}
+                  {sectionValue || "Sin contenido"}
                 </p>
               </div>
             </div>
-          ))
+          )})
         ) : (
           <div>
             <p
@@ -208,7 +206,7 @@ function PromptDetail({
                 className="text-sm leading-relaxed whitespace-pre-wrap"
                 style={{ color: "#a8a8c0" }}
               >
-                {prompt.content || prompt.preview}
+                {(prompt as Prompt).content || prompt.preview}
               </p>
             </div>
             <p className="font-mono text-xs mt-2" style={{ color: "#3d3d55" }}>
@@ -317,16 +315,14 @@ export function PromptsContent() {
         title: "Prompt mejorado",
         description: "El prompt ha sido estructurado exitosamente.",
       });
-      // Re-fetch to get updated data
-      const allPrompts = await getPrompts();
-      setPrompts(allPrompts);
-      const updated = allPrompts.find((p: Prompt) => p.id === selected.id);
-      if (updated) setSelected(updated);
+      await fetchPrompts();
+      const updated = await getPrompts();
+      const found = updated.find((p: Prompt) => p.id === selected.id);
+      if (found) setSelected(found);
     } catch (error) {
-      console.warn("Failed to improve prompt:", error);
       toast({
         title: "Error al mejorar",
-        description: "No se pudo conectar con la IA. Verifica tu configuración.",
+        description: "No se pudo conectar con la IA.",
       });
     } finally {
       setImproving(false);
@@ -335,7 +331,6 @@ export function PromptsContent() {
 
   const handleExport = async () => {
     if (!selected) return;
-
     try {
       const { content } = await exportPrompt(selected.id);
       const blob = new Blob([content], { type: "text/plain" });
@@ -400,9 +395,9 @@ export function PromptsContent() {
         {/* List */}
         <div className="flex-1 flex flex-col gap-3">
           {loading ? (
-             <div className="flex items-center justify-center p-10">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
-             </div>
+            <div className="flex items-center justify-center p-10">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+            </div>
           ) : prompts.length === 0 ? (
             <div
               className="rounded-2xl p-10 text-center"

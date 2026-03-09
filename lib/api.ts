@@ -96,11 +96,11 @@ function parseSections(content: string) {
   if (!content) return null;
 
   const sections = {
-    ROL: "",
-    TAREA: "",
-    AUDIENCIA: "",
-    FORMATO: "",
-    CONTEXTO: "",
+    rol: "",
+    tarea: "",
+    audiencia: "",
+    formato: "",
+    contexto: "",
   };
 
   // 1. Try to find explicit tags like [ROL], [TAREA], etc.
@@ -125,13 +125,25 @@ function parseSections(content: string) {
       const nextMatch = tagIndices[i + 1];
       const startTagMatch = content.slice(match.index).match(/\]/);
       if (!startTagMatch) return;
-      
+
       const contentStart = match.index + (startTagMatch.index || 0) + 1;
       const contentEnd = nextMatch ? nextMatch.index : content.length;
-      
+
       const sectionContent = content.slice(contentStart, contentEnd).trim();
       if (sectionContent) {
-        sections[match.tag as keyof typeof sections] = sectionContent;
+        // Map uppercase tag to lowercase key
+        const tag = match.tag.toUpperCase().split('/')[0]; // Handle "CONTEXTO/DETALLES"
+        if (tag === 'CONTEXTO') {
+          sections.contexto = sectionContent;
+        } else if (tag === 'ROL') {
+          sections.rol = sectionContent;
+        } else if (tag === 'TAREA') {
+          sections.tarea = sectionContent;
+        } else if (tag === 'AUDIENCIA') {
+          sections.audiencia = sectionContent;
+        } else if (tag === 'FORMATO') {
+          sections.formato = sectionContent;
+        }
       }
     });
     return sections;
@@ -167,11 +179,18 @@ export async function getPrompts(category?: string) {
       const hasSections = !!parsedSections;
       const hasLastImprovedAt = p.lastImprovedAt !== null && p.lastImprovedAt !== undefined;
       const isImproved = hasLastImprovedAt || hasSections;
+      
+      // Debug logging
+      console.log(`[Prompts API] Prompt: ${p.title}, lastImprovedAt: ${p.lastImprovedAt}, hasSections: ${hasSections}, status: ${isImproved ? "improved" : "pending"}, qualityScore: ${p.qualityScore}`);
+      if (parsedSections) {
+        console.log(`[Prompts API] Sections parsed:`, parsedSections);
+      }
+      
       const mapped = {
         ...p,
         name: p.title || p.name,
         preview: p.description || p.preview || (p.content ? p.content.slice(0, 160) : ""),
-        quality: p.qualityScore ?? 70,
+        quality: p.qualityScore ?? 50,  // Usar qualityScore del backend, default 50
         status: isImproved ? "improved" : "pending",
         sections: parsedSections || { rol: "", tarea: "", audiencia: "", formato: "", contexto: "" }
       };
@@ -203,7 +222,7 @@ export async function getPromptById(id: string | number) {
     return {
       ...p,
       name: p.title || p.name,
-      quality: p.qualityScore ?? 70,
+      quality: p.qualityScore ?? 50,  // Usar qualityScore del backend, default 50
       status: isImproved ? "improved" : "pending",
       sections: parsedSections || { rol: "", tarea: "", audiencia: "", formato: "", contexto: "" }
     };
@@ -256,8 +275,22 @@ export async function deletePrompt(id: string | number) {
 export async function exportPrompt(id: string | number) {
   if (USE_MOCK) return { content: "Mock export content" };
   try {
-    return await fetchApi<{ content: string }>(`/api/prompts/${id}/export`);
+    // El backend devuelve un string plano, no JSON
+    const response = await fetch(`${BASE_URL}/api/prompts/${id}/export`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'text/plain',
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Export failed: ${response.status}`);
+    }
+    
+    const content = await response.text();
+    return { content };
   } catch (error) {
+    console.error("Failed to export prompt:", error);
     return { content: "" };
   }
 }
