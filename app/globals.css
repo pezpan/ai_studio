@@ -88,3 +88,16 @@
     background: rgba(255, 255, 255, 0.25);
   }
 }
+
+/* Datalist styling for dark theme */
+datalist {
+  background: #12121a;
+  color: #e8e8f0;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+datalist option {
+  background: #12121a;
+  color: #e8e8f0;
+  padding: 8px 12px;
+}

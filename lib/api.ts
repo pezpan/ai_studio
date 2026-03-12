@@ -332,9 +332,18 @@ export async function getSkillById(id: string | number) {
 }
 
 export async function createSkill(input: any) {
+  // Map 'content' to 'template' if necessary to match the backend's preferred field or alias
+  const payload = {
+    name: input.name,
+    description: input.description,
+    template: input.template || input.content,
+    category: input.category,
+    parameters: input.parameters || []
+  };
+  
   return fetchApi<any>("/api/skills", {
     method: "POST",
-    body: JSON.stringify(input),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -347,12 +356,19 @@ export interface BuildSkillInput {
 }
 
 export async function buildSkill(input: BuildSkillInput) {
+  const url = `/api/skills/build`;
+  const fullUrl = `${BASE_URL}${url}`;
+  console.log("=== buildSkill: Calling", fullUrl);
+  console.log("=== buildSkill: Input", input);
+  
   const data = await fetchApi<{
-    name: string;
-    parameters: string[];
-    template: string;
-    qualityScore: number;
-  }>("/api/skills/build", {
+    skill?: {
+      name: string;
+      parameters: string[];
+      template: string;
+      estimatedQualityScore?: number;
+    };
+  }>(url, {
     method: "POST",
     body: JSON.stringify({
       objective: input.objective,
@@ -362,10 +378,15 @@ export async function buildSkill(input: BuildSkillInput) {
       saveToDatabase: input.save,
     }),
   });
-  
+
+  console.log("=== buildSkill: Response", data);
+
+  // El backend devuelve { skill: {...} }, extraemos los campos
   return {
-    ...data,
-    quality: data.qualityScore
+    name: data?.skill?.name || "",
+    parameters: data?.skill?.parameters || [],
+    template: data?.skill?.template || "",
+    quality: data?.skill?.estimatedQualityScore || 70,
   };
 }
 
