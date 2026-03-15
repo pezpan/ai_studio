@@ -50,7 +50,7 @@ src/
 │   ├── prompts/
 │   ├── skills/
 │   ├── workflows/
-│   ├── mcp-servers/
+│   ├── mcp-registry/        # Registro de MCP servers
 │   ├── context-packs/
 │   └── skill-builder/
 ├── components/
@@ -72,16 +72,16 @@ Usa siempre `process.env.NEXT_PUBLIC_API_URL` como base, no hardcodees la URL.
 
 ### Estadísticas
 ```
-GET  /api/stats/overview          → { totalPrompts, totalSkills, totalMcpServers, totalWorkflows }
-GET  /api/stats/top-skills        → [{ name, usageCount, qualityScore }]
+GET  /api/stats/global            → { totalPrompts, totalSkills, totalMcpServers, totalWorkflows }
+GET  /api/stats/ai                → { popularSkills: [{ name, usageCount, qualityScore }] }
 GET  /api/stats/recent-activity   → [{ type, description, timestamp }]
 ```
 
 ### Prompts
 ```
-GET    /api/prompts                → lista de prompts (query: ?category= &improved=)
+GET    /api/prompts                → lista de prompts (query: ?category=)
 GET    /api/prompts/{id}           → prompt completo con secciones ROL/TAREA/AUDIENCIA/FORMATO/CONTEXTO
-POST   /api/prompts                → { name, content, category }
+POST   /api/prompts                → { title, content, category }
 PUT    /api/prompts/{id}           → { name?, content?, category? }
 DELETE /api/prompts/{id}
 POST   /api/prompts/{id}/improve   → llama a Groq para mejorar el prompt con IA
@@ -91,9 +91,9 @@ GET    /api/prompts/{id}/export    → { content: string }
 ### Skills
 ```
 GET    /api/skills                 → lista (query: ?category=)
-GET    /api/skills/{id}            → skill con template completo
-POST   /api/skills/{id}/generate   → { parameters: { KEY: "value" } }
-POST   /api/skills/build           → genera skill con IA (ver body abajo)
+GET    /api/skills/{id}            → skill completa
+POST   /api/skills                 → crear skill
+POST   /api/skills/build           → genera skill con IA (Skill Builder)
 DELETE /api/skills/{id}
 ```
 
@@ -111,8 +111,8 @@ Body de `/api/skills/build`:
 ### Workflows
 ```
 GET    /api/workflows              → lista (query: ?category=)
-GET    /api/workflows/{id}         → workflow con pasos y stepResults de última ejecución
-GET    /api/workflows/popular      → top 5 más ejecutados
+GET    /api/workflows/{id}         → workflow con pasos y resultados de última ejecución
+POST   /api/workflows              → crear workflow
 POST   /api/workflows/{id}/execute → { initialInput: string, additionalContext?: string }
 DELETE /api/workflows/{id}
 ```
@@ -147,6 +147,7 @@ La respuesta de `/execute` devuelve:
 ```
 GET    /api/mcp-servers            → lista (query: ?category=)
 GET    /api/mcp-servers/{id}       → servidor con configJson completo
+POST   /api/mcp-servers            → crear servidor
 POST   /api/mcp-servers/{id}/test  → ?level=STATIC | CONNECTIVITY
 POST   /api/mcp-servers/test-all   → ?level=STATIC | CONNECTIVITY
 POST   /api/mcp-servers/test-config → { configJson: string, level: string }
