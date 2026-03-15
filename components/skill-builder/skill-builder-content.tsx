@@ -238,8 +238,12 @@ export function SkillBuilderContent() {
               {loading ? (
                 <>
                   <span
-                    className="w-5 h-5 rounded-full border-2 animate-spin"
+                    className="rounded-full animate-spin"
                     style={{
+                      width: "20px",
+                      height: "20px",
+                      borderWidth: "2px",
+                      borderStyle: "solid",
                       borderColor: "rgba(255,255,255,0.3)",
                       borderTopColor: "white",
                     }}
@@ -365,8 +369,12 @@ export function SkillBuilderContent() {
                   {saving ? (
                     <>
                       <span
-                        className="w-4 h-4 rounded-full border-2 animate-spin"
+                        className="rounded-full animate-spin"
                         style={{
+                          width: "16px",
+                          height: "16px",
+                          borderWidth: "2px",
+                          borderStyle: "solid",
                           borderColor: "rgba(255,255,255,0.3)",
                           borderTopColor: "white",
                         }}

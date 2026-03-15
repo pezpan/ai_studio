@@ -134,10 +134,16 @@ function WorkflowRunner({ workflow }: { workflow: Workflow }) {
           {running ? (
             <>
               <span
-                className="w-3.5 h-3.5 rounded-full border-2 animate-spin"
-                style={{ borderColor: "rgba(255,255,255,0.3)", borderTopColor: "white" }}
-              />
-              Running
+                className="rounded-full animate-spin"
+                style={{ 
+                  width: "14px", 
+                  height: "14px", 
+                  borderWidth: "2px", 
+                  borderStyle: "solid",
+                  borderColor: "rgba(255,255,255,0.3)", 
+                  borderTopColor: "white" 
+                }}
+              />              Running
             </>
           ) : (
             "▶ Ejecutar"
@@ -194,14 +200,16 @@ function WorkflowRunner({ workflow }: { workflow: Workflow }) {
                           : status === "running"
                           ? "transparent"
                           : "rgba(255,255,255,0.05)",
-                      border:
-                        status === "running"
-                          ? "2px solid rgba(99,102,241,0.3)"
-                          : status === "done"
-                          ? "2px solid #22c55e"
+                      borderWidth: "2px",
+                      borderStyle: "solid",
+                      borderColor:
+                        status === "done"
+                          ? "#22c55e"
                           : status === "error"
-                          ? "2px solid #ef4444"
-                          : "2px solid rgba(255,255,255,0.1)",
+                          ? "#ef4444"
+                          : status === "running"
+                          ? "rgba(99,102,241,0.3)"
+                          : "rgba(255,255,255,0.1)",
                       borderTopColor: status === "running" ? "#6366f1" : undefined,
                     }}
                   >

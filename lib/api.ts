@@ -470,6 +470,20 @@ export async function getMcpServers(category?: string) {
   }
 }
 
+export async function getMcpServerById(id: string | number) {
+  try {
+    const s = await fetchApi<any>(`/api/mcp-servers/${id}`);
+    if (!s) return null;
+    return {
+      ...s,
+      validationStatus: s.validationStatus || (s.verified ? 'OK' : 'WARNING'),
+      issues: s.issues || []
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
 export async function createMcpServer(input: any) {
   return fetchApi<any>("/api/mcp-servers", {
     method: "POST",
